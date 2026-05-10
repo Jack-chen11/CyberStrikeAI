@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"unicode/utf8"
 
+	"cyberstrike-ai/internal/agent"
 	"cyberstrike-ai/internal/einomcp"
 
 	"github.com/cloudwego/eino/adk"
@@ -76,6 +77,11 @@ type einoADKRunLoopArgs struct {
 
 	McpIDsMu *sync.Mutex
 	McpIDs   *[]string
+
+	// FilesystemMonitorAgent / FilesystemMonitorRecord 非 nil 时，将 Eino ADK filesystem 中间件工具（ls/read_file/write_file/edit_file/glob/grep）
+	// 在完成时写入 MCP 监控；execute 仍由 eino_execute_monitor 记录，此处跳过。
+	FilesystemMonitorAgent  *agent.Agent
+	FilesystemMonitorRecord einomcp.ExecutionRecorder
 
 	// ToolInvokeNotify 与 einomcp.ToolsFromDefinitions 共享：run loop 在迭代前 Set，MCP 桥 Fire 以补全 tool_result。
 	ToolInvokeNotify *einomcp.ToolInvokeNotifyHolder
@@ -885,6 +891,7 @@ func runEinoADKAgentLoop(ctx context.Context, args *einoADKRunLoopArgs, baseMsgs
 				data["toolCallId"] = toolCallID
 			}
 			recordPendingExecuteStdoutDup(toolName, content, isErr)
+			recordEinoADKFilesystemToolMonitor(args.FilesystemMonitorAgent, args.FilesystemMonitorRecord, toolName, toolCallID, runAccumulatedMsgs, content, isErr)
 			progress("tool_result", fmt.Sprintf("工具结果 (%s)", toolName), data)
 		}
 	}
