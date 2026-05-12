@@ -117,6 +117,21 @@ multi_agent:
     deep_output_key: "" # 非空：将最终助手输出写入 adk session 的键名（Deep 与 Supervisor 主代理）；空表示不写入
     deep_model_retry_max_retries: 0 # >0：ChatModel 调用失败时的框架级最大重试次数（Deep 与 Supervisor 主）；0：不重试
     task_tool_description_prefix: "" # 非空：仅 Deep 的 task 工具使用自定义描述前缀，运行时会拼接子代理名称；空则走 Eino 默认生成逻辑
+  # Eino callbacks + OpenTelemetry：框架级 span（与 Zap 对齐）；默认不向终端用户 UI 推 eino_trace_*（见 sse_trace_to_client）
+  eino_callbacks:
+    enabled: true
+    # log_only=仅 Zap+OTel（推荐默认）| sse/full=才启用流式回调副本关闭等（full 含 stream hooks）
+    mode: log_only
+    sse_trace_to_client: false # true：且 mode 为 sse/full 时，向前端时间线推送 eino_trace_*（排障/内网演示用）
+    max_input_summary_runes: 400
+    max_output_summary_runes: 400
+    zap_verbose: false # true：Debug 附带 input/output 摘要
+    otel:
+      enabled: true
+      service_name: cyberstrike-ai
+      exporter: stdout # none | stdout（开发/本机）| otlphttp（生产接 Collector）
+      otlp_endpoint: localhost:4318 # otlphttp 时使用，host:port，路径固定 /v1/traces
+      sample_ratio: 1.0 # 0~1，ParentBased+TraceIDRatio
 # 数据库配置
 database:
   path: data/conversations.db # SQLite 数据库文件路径，用于存储对话历史和消息
