@@ -40,9 +40,9 @@ type Config struct {
 
 // MultiAgentConfig 基于 CloudWeGo Eino adk/prebuilt 的多代理编排（deep | plan_execute | supervisor，与单 Agent /agent-loop 并存）。
 type MultiAgentConfig struct {
-	Enabled            bool `yaml:"enabled" json:"enabled"`
-	RobotUseMultiAgent bool `yaml:"robot_use_multi_agent" json:"robot_use_multi_agent"` // 为 true 时钉钉/飞书/企微机器人走 Eino 多代理
-	BatchUseMultiAgent bool `yaml:"batch_use_multi_agent" json:"batch_use_multi_agent"` // 为 true 时批量任务队列中每子任务走 Eino 多代理
+	Enabled               bool   `yaml:"enabled" json:"enabled"`
+	RobotDefaultAgentMode string `yaml:"robot_default_agent_mode,omitempty" json:"robot_default_agent_mode,omitempty"` // react | eino_single | deep | plan_execute | supervisor
+	BatchUseMultiAgent     bool   `yaml:"batch_use_multi_agent" json:"batch_use_multi_agent"` // 为 true 时批量任务队列中每子任务走 Eino 多代理
 	// Orchestration 已弃用：保留仅兼容旧版 config.yaml；编排由聊天/WebShell 请求体 orchestration 决定，未传时按 deep。
 	Orchestration string `yaml:"orchestration,omitempty" json:"orchestration,omitempty"`
 	MaxIteration  int    `yaml:"max_iteration" json:"max_iteration"` // 主代理 / 执行器最大推理轮次（Deep、Supervisor、plan_execute 的 Executor）
@@ -363,14 +363,26 @@ type MultiAgentSubConfig struct {
 
 // MultiAgentPublic 返回给前端的精简信息（不含子代理指令全文）。
 type MultiAgentPublic struct {
-	Enabled                      bool   `json:"enabled"`
-	RobotUseMultiAgent           bool   `json:"robot_use_multi_agent"`
-	BatchUseMultiAgent           bool   `json:"batch_use_multi_agent"`
+	Enabled               bool   `json:"enabled"`
+	RobotDefaultAgentMode string `json:"robot_default_agent_mode,omitempty"`
+	BatchUseMultiAgent    bool   `json:"batch_use_multi_agent"`
 	SubAgentCount                int    `json:"sub_agent_count"`
 	Orchestration                string `json:"orchestration,omitempty"`
 	PlanExecuteLoopMaxIterations int    `json:"plan_execute_loop_max_iterations"`
 	ToolSearchAlwaysVisibleTools []string `json:"tool_search_always_visible_tools,omitempty"`
 	ToolSearchAlwaysVisibleEffectiveTools []string `json:"tool_search_always_visible_effective_tools,omitempty"`
+}
+
+// NormalizeRobotAgentMode 解析机器人默认对话模式（react | eino_single | deep | plan_execute | supervisor）；空值视为 react。
+func NormalizeRobotAgentMode(ma MultiAgentConfig) string {
+	s := strings.TrimSpace(strings.ToLower(ma.RobotDefaultAgentMode))
+	if s == "" || s == "single" || s == "react" {
+		return "react"
+	}
+	if s == "eino_single" {
+		return "eino_single"
+	}
+	return NormalizeMultiAgentOrchestration(s)
 }
 
 // NormalizeMultiAgentOrchestration 返回 deep、plan_execute 或 supervisor。
@@ -388,9 +400,9 @@ func NormalizeMultiAgentOrchestration(s string) string {
 
 // MultiAgentAPIUpdate 设置页/API 仅更新多代理标量字段；写入 YAML 时不覆盖 sub_agents 等块。
 type MultiAgentAPIUpdate struct {
-	Enabled                      bool `json:"enabled"`
-	RobotUseMultiAgent           bool `json:"robot_use_multi_agent"`
-	BatchUseMultiAgent           bool `json:"batch_use_multi_agent"`
+	Enabled               bool   `json:"enabled"`
+	RobotDefaultAgentMode string `json:"robot_default_agent_mode,omitempty"`
+	BatchUseMultiAgent    bool   `json:"batch_use_multi_agent"`
 	PlanExecuteLoopMaxIterations *int `json:"plan_execute_loop_max_iterations,omitempty"`
 	// 指针区分「JSON 未传该字段」与「传空数组要清空」；省略时不应覆盖 YAML 中的常驻工具白名单。
 	ToolSearchAlwaysVisibleTools *[]string `json:"tool_search_always_visible_tools,omitempty"`
