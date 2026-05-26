@@ -72,6 +72,7 @@ func BuildFactIndexBlock(db *database.DB, projectID string, cfg config.ProjectCo
 	if omitted > 0 {
 		b.WriteString(fmt.Sprintf("\n（另有 %d 条未列入索引，请使用 list_project_facts 或 search_project_facts 查询。）\n", omitted))
 	}
-	b.WriteString("需要完整内容（POC、长文本等）时必须调用 get_project_fact(fact_key)，禁止凭摘要臆造细节。\n")
+	b.WriteString("需要完整内容（攻击链、POC、请求响应等）时必须调用 get_project_fact(fact_key)，禁止凭摘要臆造细节。\n")
+	b.WriteString("写入事实时：summary 写「什么+在哪+如何验证」；body 写可复现全流程（发现/利用类 fact_key 建议 finding|chain|exploit|poc/ 前缀）。\n")
 	return b.String(), nil
 }
