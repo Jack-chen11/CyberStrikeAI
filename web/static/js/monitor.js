@@ -208,17 +208,31 @@ if (typeof window !== 'undefined') {
     window.formatTimelineStreamBody = formatTimelineStreamBody;
 }
 
-// 存储工具调用ID到DOM元素的映射，用于更新执行状态
+// 存储工具调用ID到DOM元素的映射，用于更新执行状态。
+// 键必须带 progressId 作用域，避免不同任务复用相同 toolCallId 时串线。
 const toolCallStatusMap = new Map();
+
+function toolCallMapKey(progressId, toolCallId) {
+    return String(progressId) + '::' + String(toolCallId);
+}
+
+function getToolCallMapping(progressId, toolCallId) {
+    if (!toolCallId) return null;
+    const scoped = toolCallStatusMap.get(toolCallMapKey(progressId, toolCallId));
+    if (scoped) return scoped;
+    // 兼容历史遗留：若 map 中还有旧格式 key（仅 toolCallId），兜底读取。
+    return toolCallStatusMap.get(String(toolCallId)) || null;
+}
 
 function finalizeOutstandingToolCallsForProgress(progressId, finalStatus) {
     if (!progressId) return;
     const pid = String(progressId);
-    for (const [toolCallId, mapping] of Array.from(toolCallStatusMap.entries())) {
+    for (const [mapKey, mapping] of Array.from(toolCallStatusMap.entries())) {
         if (!mapping) continue;
         if (mapping.progressId != null && String(mapping.progressId) !== pid) continue;
-        updateToolCallStatus(toolCallId, finalStatus);
-        toolCallStatusMap.delete(toolCallId);
+        const tcid = mapping.toolCallId || (String(mapKey).includes('::') ? String(mapKey).split('::').slice(1).join('::') : String(mapKey));
+        updateToolCallStatus(mapping.progressId || progressId, tcid, finalStatus);
+        toolCallStatusMap.delete(mapKey);
     }
 }
 
@@ -1601,6 +1615,17 @@ function handleStreamEvent(event, progressElement, progressId,
             const index = toolInfo.index || 0;
             const total = toolInfo.total || 0;
             const toolCallId = toolInfo.toolCallId || null;
+            if (toolCallId) {
+                const existing = getToolCallMapping(progressId, toolCallId);
+                if (existing && existing.itemId) {
+                    const existingItem = document.getElementById(existing.itemId);
+                    if (existingItem) {
+                        // 同一 toolCallId 的重复 tool_call（重试/补发）只更新状态，不重复追加条目。
+                        updateToolCallStatus(progressId, toolCallId, 'running');
+                        break;
+                    }
+                }
+            }
             const toolCallTitle = formatToolCallTimelineTitle(toolName, index, total);
             const toolCallItemId = addTimelineItem(timeline, 'tool_call', {
                 title: timelineAgentBracketPrefix(toolInfo) + '🔧 ' + toolCallTitle,
@@ -1611,14 +1636,16 @@ function handleStreamEvent(event, progressElement, progressId,
             
             // 如果有toolCallId，存储映射关系以便后续更新状态
             if (toolCallId && toolCallItemId) {
-                toolCallStatusMap.set(toolCallId, {
+                const mapKey = toolCallMapKey(progressId, toolCallId);
+                toolCallStatusMap.set(mapKey, {
+                    toolCallId: toolCallId,
                     itemId: toolCallItemId,
                     timeline: timeline,
                     progressId: progressId
                 });
                 
                 // 添加执行中状态指示器
-                updateToolCallStatus(toolCallId, 'running');
+                updateToolCallStatus(progressId, toolCallId, 'running');
             }
             break;
 
@@ -1633,7 +1660,7 @@ function handleStreamEvent(event, progressElement, progressId,
             if (!deltaText) break;
 
             if (!state) {
-                const mapping = toolCallStatusMap.get(toolCallId);
+                const mapping = getToolCallMapping(progressId, toolCallId);
                 let callItemId = mapping && mapping.itemId ? mapping.itemId : null;
                 if (callItemId) {
                     const callItem = document.getElementById(callItemId);
@@ -1679,24 +1706,26 @@ function handleStreamEvent(event, progressElement, progressId,
                         mergeToolResultIntoCallItem(streamCallItem, resultInfo);
                     }
                     toolResultStreamStateByKey.delete(key);
-                    if (toolCallStatusMap.has(resultToolCallId)) {
-                        updateToolCallStatus(resultToolCallId, success ? 'completed' : 'failed');
-                        toolCallStatusMap.delete(resultToolCallId);
+                    const mapKey = toolCallMapKey(progressId, resultToolCallId);
+                    if (toolCallStatusMap.has(mapKey)) {
+                        updateToolCallStatus(progressId, resultToolCallId, success ? 'completed' : 'failed');
+                        toolCallStatusMap.delete(mapKey);
                     }
                     break;
                 }
-                if (attachToolResultToCall(resultToolCallId, resultInfo)) {
-                    if (toolCallStatusMap.has(resultToolCallId)) {
-                        updateToolCallStatus(resultToolCallId, success ? 'completed' : 'failed');
-                        toolCallStatusMap.delete(resultToolCallId);
+                if (attachToolResultToCall(progressId, resultToolCallId, resultInfo)) {
+                    const mapKey = toolCallMapKey(progressId, resultToolCallId);
+                    if (toolCallStatusMap.has(mapKey)) {
+                        updateToolCallStatus(progressId, resultToolCallId, success ? 'completed' : 'failed');
+                        toolCallStatusMap.delete(mapKey);
                     }
                     break;
                 }
             }
 
-            if (resultToolCallId && toolCallStatusMap.has(resultToolCallId)) {
-                updateToolCallStatus(resultToolCallId, success ? 'completed' : 'failed');
-                toolCallStatusMap.delete(resultToolCallId);
+            if (resultToolCallId && toolCallStatusMap.has(toolCallMapKey(progressId, resultToolCallId))) {
+                updateToolCallStatus(progressId, resultToolCallId, success ? 'completed' : 'failed');
+                toolCallStatusMap.delete(toolCallMapKey(progressId, resultToolCallId));
             }
             addTimelineItem(timeline, 'tool_result', {
                 title: timelineAgentBracketPrefix(resultInfo) + statusIcon + ' ' + resultExecText,
@@ -2676,9 +2705,9 @@ function findToolCallItemById(root, toolCallId) {
     }
 }
 
-function attachToolResultToCall(toolCallId, data, options) {
+function attachToolResultToCall(progressId, toolCallId, data, options) {
     if (!toolCallId || !data) return false;
-    const mapping = toolCallStatusMap.get(toolCallId);
+    const mapping = getToolCallMapping(progressId, toolCallId);
     let item = null;
     if (mapping && mapping.itemId) {
         item = document.getElementById(mapping.itemId);
@@ -2755,8 +2784,8 @@ window.parseToolCallArgsFromData = parseToolCallArgsFromData;
 window.buildToolResultSectionHtml = buildToolResultSectionHtml;
 
 // 更新工具调用状态
-function updateToolCallStatus(toolCallId, status) {
-    const mapping = toolCallStatusMap.get(toolCallId);
+function updateToolCallStatus(progressId, toolCallId, status) {
+    const mapping = getToolCallMapping(progressId, toolCallId);
     if (!mapping) return;
     
     const item = document.getElementById(mapping.itemId);
