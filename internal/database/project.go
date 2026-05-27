@@ -59,9 +59,11 @@ type ProjectFact struct {
 
 // ProjectFactListFilter 事实列表筛选。
 type ProjectFactListFilter struct {
-	Category   string
-	Confidence string
-	Search     string
+	Category                string
+	Confidence              string
+	Search                  string
+	RelatedVulnerabilityID  string
+	ExcludeDeprecated       bool // 为 true 时排除 confidence=deprecated
 }
 
 // CreateProject 创建项目。
@@ -160,8 +162,11 @@ func (db *DB) UpdateProject(p *Project) error {
 	return nil
 }
 
-// DeleteProject 删除项目（级联删除事实；对话 project_id 置空由 FK 处理）。
+// DeleteProject 删除项目（级联删除事实；对话 project_id 置空由 FK 处理；漏洞 project_id 置空）。
 func (db *DB) DeleteProject(id string) error {
+	if _, err := db.Exec(`UPDATE vulnerabilities SET project_id = NULL WHERE project_id = ?`, id); err != nil {
+		return fmt.Errorf("解除漏洞项目关联失败: %w", err)
+	}
 	_, err := db.Exec(`DELETE FROM projects WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("删除项目失败: %w", err)
@@ -243,6 +248,13 @@ func (db *DB) ListProjectFacts(projectID string, filter ProjectFactListFilter, l
 		query += " AND confidence = ?"
 		args = append(args, c)
 	}
+	if filter.ExcludeDeprecated {
+		query += " AND confidence != 'deprecated'"
+	}
+	if rid := strings.TrimSpace(filter.RelatedVulnerabilityID); rid != "" {
+		query += " AND related_vulnerability_id = ?"
+		args = append(args, rid)
+	}
 	if s := strings.TrimSpace(filter.Search); s != "" {
 		pat := "%" + s + "%"
 		query += " AND (fact_key LIKE ? OR summary LIKE ? OR body LIKE ?)"
@@ -309,10 +321,26 @@ func (db *DB) UpsertProjectFact(f *ProjectFact) (*ProjectFact, error) {
 		f.CreatedAt = existing.CreatedAt
 		f.UpdatedAt = now
 		f.Body = mergeFactBodyOnUpdate(f.Body, existing.Body)
+		if strings.TrimSpace(f.Category) == "" {
+			f.Category = existing.Category
+		}
+		if strings.TrimSpace(f.Confidence) == "" {
+			f.Confidence = existing.Confidence
+		}
+		if projectFactContentChanged(existing, f) {
+			versionID, verr := db.InsertProjectFactVersion(existing)
+			if verr != nil {
+				return nil, verr
+			}
+			f.SupersedesFactID = versionID
+		} else if f.SupersedesFactID == "" {
+			f.SupersedesFactID = existing.SupersedesFactID
+		}
 		_, err = db.Exec(
 			`UPDATE project_facts SET category = ?, summary = ?, body = ?, confidence = ?,
-				source_conversation_id = ?, source_message_id = ?, pinned = ?,
-				supersedes_fact_id = ?, related_vulnerability_id = ?, updated_at = ?
+				source_conversation_id = COALESCE(?, source_conversation_id),
+				source_message_id = COALESCE(?, source_message_id),
+				pinned = ?, supersedes_fact_id = ?, related_vulnerability_id = ?, updated_at = ?
 			 WHERE id = ?`,
 			f.Category, f.Summary, f.Body, f.Confidence,
 			nullIfEmpty(f.SourceConversationID), nullIfEmpty(f.SourceMessageID), boolToInt(f.Pinned),

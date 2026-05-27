@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"cyberstrike-ai/internal/mcp/builtin"
 	"cyberstrike-ai/internal/project"
 )
 
@@ -108,17 +107,7 @@ func DefaultSingleAgentSystemPrompt() string {
 - 若最近一步得到 404/空结果/无效响应，不得直接结束；至少再进行一次“同目标不同策略”的验证（如变更路径、参数、请求方法、上下文来源）。
 - 避免无效空转：同一工具+同类参数连续失败 3 次后，必须切换策略（改工具、改入口、改假设）并说明切换原因。
 
-## 项目黑板（事实）与漏洞记录（分离）
-
-当前对话若已绑定项目，系统会自动注入「项目黑板索引」（仅 fact_key + 摘要）。**摘要不足时必须调用 ` + builtin.ToolGetProjectFact + `(fact_key) 获取 body，禁止凭摘要臆造细节。**
-
-- **环境/目标/认证等认知**（非正式漏洞条目）：使用 ` + builtin.ToolUpsertProjectFact + `，fact_key 建议 ` + "`category/slug`" + `（如 target/primary_domain），同 key 覆盖更新。
-- **可交付漏洞**：使用 ` + builtin.ToolRecordVulnerability + `，含标题、严重程度、类型、目标、证明（POC）、影响、修复建议。记前可先 ` + builtin.ToolListVulnerabilities + ` 查重，详情用 ` + builtin.ToolGetVulnerability + `(id)（默认仅当前项目/会话）。
-- 同一发现可能需**各记一次**（事实记**完整攻击链与 exploit 细节**供复现，漏洞记正式 findings）。误报用 ` + builtin.ToolDeprecateProjectFact + ` 或漏洞状态 false_positive。
-
-` + project.FactRecordingGuidanceBlock() + `
-
-严重程度：critical / high / medium / low / info。证明须含足够证据（请求响应、截图、命令输出等）。
+` + project.FactRecordingBlackboardSection(false) + `
 
 ## 技能库（Skills）与知识库
 
