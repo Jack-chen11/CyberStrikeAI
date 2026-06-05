@@ -4387,12 +4387,13 @@ function bindMonitorStatsPanelEvents() {
     monitorStatsPanelEventsBound = true;
 }
 
-function renderMcpStatsMetricsBar(totals, successRate, rateTone, rateSubText, lastCallText) {
+function renderMcpStatsMetricsBar(totals, successRate, rateTone, rateSubText, lastCallText, hasCalls = true) {
     const totalCallsLabel = mcpMonitorT('totalCalls') || '总调用次数';
     const successRateLabel = mcpMonitorT('successRate') || '成功率';
     const lastCallLabel = mcpMonitorT('lastCall') || '最近一次调用';
     const successPill = mcpMonitorT('successCount', { n: totals.success }) || `成功 ${totals.success}`;
     const failedPill = mcpMonitorT('failedCount', { n: totals.failed }) || `失败 ${totals.failed}`;
+    const rateValue = hasCalls ? `${successRate}%` : successRate;
 
     return `
         <div class="mcp-stats-kpi" role="group" aria-label="${escapeHtml(totalCallsLabel)}">
@@ -4411,7 +4412,7 @@ function renderMcpStatsMetricsBar(totals, successRate, rateTone, rateSubText, la
                 <span class="mcp-stats-kpi__accent" aria-hidden="true"></span>
                 <div class="mcp-stats-kpi__content">
                     <span class="mcp-stats-kpi__label">${escapeHtml(successRateLabel)}</span>
-                    <span class="mcp-stats-kpi__value mcp-stats-kpi__value--rate ${rateTone}">${successRate}%</span>
+                    <span class="mcp-stats-kpi__value mcp-stats-kpi__value--rate ${rateTone}">${rateValue}</span>
                     <span class="mcp-stats-kpi__status ${rateTone}">${escapeHtml(rateSubText)}</span>
                 </div>
             </article>
@@ -4666,18 +4667,22 @@ function renderMonitorStats(statsMap = {}, lastFetchedAt = null) {
         { total: 0, success: 0, failed: 0, lastCallTime: null }
     );
 
-    const successRateNum = totals.total > 0 ? (totals.success / totals.total) * 100 : 0;
-    const successRate = successRateNum.toFixed(1);
+    const hasCalls = totals.total > 0;
+    const successRateNum = hasCalls ? (totals.success / totals.total) * 100 : 0;
+    const successRate = hasCalls ? successRateNum.toFixed(1) : '-';
     const locale = (typeof window.__locale === 'string' && window.__locale.startsWith('zh')) ? 'zh-CN' : 'en-US';
     const noCallsYet = mcpMonitorT('noCallsYet') || '暂无调用';
     const lastCallText = totals.lastCallTime
         ? (totals.lastCallTime.toLocaleString ? totals.lastCallTime.toLocaleString(locale) : String(totals.lastCallTime))
         : noCallsYet;
 
-    const rateTone = getMcpStatsRateTone(successRateNum);
-    let rateSubText = mcpMonitorT('rateHealthy') || '运行平稳';
-    if (successRateNum < 80) rateSubText = mcpMonitorT('rateCritical') || '失败率偏高';
-    else if (successRateNum < 95) rateSubText = mcpMonitorT('rateWarning') || '存在失败调用';
+    const rateTone = hasCalls ? getMcpStatsRateTone(successRateNum) : 'is-muted';
+    let rateSubText = noCallsYet;
+    if (hasCalls) {
+        rateSubText = mcpMonitorT('rateHealthy') || '运行平稳';
+        if (successRateNum < 80) rateSubText = mcpMonitorT('rateCritical') || '失败率偏高';
+        else if (successRateNum < 95) rateSubText = mcpMonitorT('rateWarning') || '存在失败调用';
+    }
 
     const toolFilterEl = document.getElementById('monitor-tool-filter');
     const activeToolFilter = toolFilterEl ? toolFilterEl.value.trim() : '';
@@ -4691,7 +4696,7 @@ function renderMonitorStats(statsMap = {}, lastFetchedAt = null) {
     const showCombined = showTimeline || topTools.length > 0;
     const html = `
         <div class="mcp-exec-stats">
-            ${renderMcpStatsMetricsBar(totals, successRate, rateTone, rateSubText, lastCallText)}
+            ${renderMcpStatsMetricsBar(totals, successRate, rateTone, rateSubText, lastCallText, hasCalls)}
             ${showCombined ? renderMcpStatsCombinedSection(
                 topTools,
                 totals,
@@ -4730,7 +4735,11 @@ function renderMonitorExecutions(executions = [], statusFilter = 'all') {
         if (hasFilter) {
             container.innerHTML = '<div class="monitor-empty">' + escapeHtml(noRecordsFilter) + '</div>';
         } else {
-            container.innerHTML = '<div class="monitor-empty">' + escapeHtml(noExecutions) + '</div>';
+            const emptyHint = typeof window.t === 'function' ? window.t('mcpMonitor.emptyHint') : '在对话或任务中调用 MCP 工具后，执行记录将显示在此处';
+            container.innerHTML = `<div class="monitor-empty">
+                <p class="monitor-empty__title">${escapeHtml(noExecutions)}</p>
+                <p class="monitor-empty__hint">${escapeHtml(emptyHint)}</p>
+            </div>`;
         }
         // 隐藏批量操作栏
         const batchActions = document.getElementById('monitor-batch-actions');

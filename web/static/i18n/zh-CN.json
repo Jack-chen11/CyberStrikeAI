@@ -1488,6 +1488,7 @@
     "loading": "加载中...",
     "noStatsData": "暂无统计数据",
     "noExecutions": "暂无执行记录",
+    "emptyHint": "在对话或任务中调用 MCP 工具后，执行记录将显示在此处",
     "noRecordsWithFilter": "当前筛选条件下暂无记录",
     "paginationInfo": "显示 {{start}}-{{end}} / 共 {{total}} 条记录",
     "perPageLabel": "每页显示",

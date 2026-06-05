@@ -1499,6 +1499,7 @@
     "loading": "Loading...",
     "noStatsData": "No statistical data",
     "noExecutions": "No execution records",
+    "emptyHint": "Execution records will appear here after you invoke MCP tools in chat or tasks",
     "noRecordsWithFilter": "No records with current filter",
     "paginationInfo": "Show {{start}}-{{end}} of {{total}} records",
     "perPageLabel": "Per page",
