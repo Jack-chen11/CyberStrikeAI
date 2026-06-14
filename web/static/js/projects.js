@@ -12,7 +12,6 @@ let _projectsFetchPromise = null;
 
 const PROJECT_ACTIVE_KEY = 'cyberstrike.activeProjectId';
 const PROJECT_DESCRIPTION_MAX_LENGTH = 4000;
-const PROJECT_DESC_COLLAPSE_THRESHOLD = 180;
 
 function tp(key, opts) {
     if (typeof window.t === 'function') return window.t(key, opts);
@@ -625,57 +624,27 @@ function clampProjectDescription(text) {
     return s.slice(0, PROJECT_DESCRIPTION_MAX_LENGTH);
 }
 
-function projectDescriptionNeedsToggle(text) {
-    const s = (text || '').trim();
-    if (!s) return false;
-    if (s.length > PROJECT_DESC_COLLAPSE_THRESHOLD) return true;
-    return s.split('\n').length > 3;
+function renderProjectDetailTitle(name) {
+    const titleEl = document.getElementById('projects-detail-title');
+    if (!titleEl) return;
+    const text = (name || '').trim() || tp('projects.defaultProjectName');
+    titleEl.textContent = text;
+    titleEl.title = text;
 }
 
 function renderProjectDetailDesc(desc) {
-    const blockEl = document.getElementById('projects-detail-desc-block');
     const descEl = document.getElementById('projects-detail-desc');
-    const toggleEl = document.getElementById('projects-detail-desc-toggle');
-    if (!descEl || !blockEl) return;
+    if (!descEl) return;
     const text = (desc || '').trim();
     if (!text) {
-        blockEl.hidden = true;
+        descEl.hidden = true;
         descEl.textContent = '';
-        descEl.className = 'projects-detail-desc is-collapsed';
-        if (toggleEl) {
-            toggleEl.hidden = true;
-            toggleEl.dataset.expanded = 'false';
-        }
+        descEl.removeAttribute('title');
         return;
     }
     descEl.textContent = text;
-    blockEl.hidden = false;
-    descEl.classList.remove('is-expanded');
-    descEl.classList.add('is-collapsed');
-    if (toggleEl) {
-        const needsToggle = projectDescriptionNeedsToggle(text);
-        toggleEl.hidden = !needsToggle;
-        toggleEl.textContent = tp('projects.descExpand');
-        toggleEl.dataset.expanded = 'false';
-    }
-}
-
-function toggleProjectDetailDesc() {
-    const descEl = document.getElementById('projects-detail-desc');
-    const toggleEl = document.getElementById('projects-detail-desc-toggle');
-    if (!descEl || !toggleEl || toggleEl.hidden) return;
-    const expanded = toggleEl.dataset.expanded === 'true';
-    if (expanded) {
-        descEl.classList.add('is-collapsed');
-        descEl.classList.remove('is-expanded');
-        toggleEl.textContent = tp('projects.descExpand');
-        toggleEl.dataset.expanded = 'false';
-    } else {
-        descEl.classList.remove('is-collapsed');
-        descEl.classList.add('is-expanded');
-        toggleEl.textContent = tp('projects.descCollapse');
-        toggleEl.dataset.expanded = 'true';
-    }
+    descEl.title = text;
+    descEl.hidden = false;
 }
 
 function updateProjectStatusPill(status) {
@@ -731,8 +700,7 @@ async function selectProject(id) {
         const res = await apiFetch(`/api/projects/${id}`);
         if (!res.ok) throw new Error(tp('projects.projectNotFound'));
         const p = await res.json();
-        const titleEl = document.getElementById('projects-detail-title');
-        if (titleEl) titleEl.textContent = p.name || tp('projects.defaultProjectName');
+        renderProjectDetailTitle(p.name);
         document.getElementById('project-edit-name').value = p.name || '';
         document.getElementById('project-edit-description').value = p.description || '';
         document.getElementById('project-edit-scope').value = p.scope_json || '';
@@ -743,8 +711,7 @@ async function selectProject(id) {
         updateProjectStatusPill(p.status || 'active');
         const metaEl = document.getElementById('projects-detail-meta');
         if (metaEl) metaEl.textContent = tpFmt('projects.updatedPrefix', `Updated ${formatProjectTime(p.updated_at)}`, { time: formatProjectTime(p.updated_at) });
-        const descEl = document.getElementById('projects-detail-desc');
-        if (descEl) renderProjectDetailDesc(p.description);
+        renderProjectDetailDesc(p.description);
         projectNameById[p.id] = p.name || p.id;
     } catch (e) {
         console.warn(e);
@@ -1246,6 +1213,33 @@ function showNewProjectModal() {
     openProjectsOverlay('project-modal');
 }
 
+async function showEditProjectModal(projectId) {
+    if (!projectId) return;
+    window._projectModalFromChat = false;
+    window._projectModalEditId = projectId;
+    document.getElementById('project-modal-title').textContent = tp('projects.modalEditTitle');
+    const sub = document.getElementById('project-modal-subtitle');
+    if (sub) sub.textContent = tp('projects.modalEditSubtitle');
+    const submitBtn = document.getElementById('project-modal-submit-btn');
+    if (submitBtn) submitBtn.textContent = tp('projects.saveChanges');
+    let p = findProjectById(projectId);
+    if (!p) {
+        try {
+            const res = await apiFetch(`/api/projects/${encodeURIComponent(projectId)}`);
+            if (!res.ok) throw new Error(tp('projects.projectNotFound'));
+            p = await res.json();
+        } catch (e) {
+            alert(e.message || tp('projects.projectNotFound'));
+            window._projectModalEditId = null;
+            return;
+        }
+    }
+    document.getElementById('project-modal-name').value = p.name || '';
+    document.getElementById('project-modal-description').value = p.description || '';
+    openProjectsOverlay('project-modal');
+    setTimeout(() => document.getElementById('project-modal-name')?.focus(), 0);
+}
+
 /** 从对话区「选择项目」面板打开新建项目，创建成功后自动绑定当前对话 */
 function showNewProjectModalFromChat() {
     closeChatProjectPanel();
@@ -1285,6 +1279,7 @@ async function saveProjectModal() {
 
 function closeProjectModal() {
     window._projectModalFromChat = false;
+    window._projectModalEditId = null;
     closeProjectsOverlay('project-modal');
 }
 
@@ -1390,8 +1385,10 @@ function showProjectListActionMenu(event, projectId) {
     const p = findProjectById(projectId);
     if (!p) return;
     _projectListMenuTargetId = projectId;
+    const editText = document.getElementById('projects-list-menu-edit-text');
     const archiveText = document.getElementById('projects-list-menu-archive-text');
     const deleteText = document.getElementById('projects-list-menu-delete-text');
+    if (editText) editText.textContent = tp('projects.editProject');
     if (archiveText) {
         archiveText.textContent = p.status === 'archived'
             ? tp('projects.restoreProjectActive')
@@ -1459,6 +1456,13 @@ async function toggleProjectArchiveFromListMenu() {
     closeProjectListActionMenu();
     if (!projectId) return;
     await toggleProjectArchiveById(projectId);
+}
+
+function editProjectFromListMenu() {
+    const projectId = _projectListMenuTargetId;
+    closeProjectListActionMenu();
+    if (!projectId) return;
+    showEditProjectModal(projectId);
 }
 
 async function deleteProjectFromListMenu() {
@@ -1899,6 +1903,7 @@ if (document.readyState === 'loading') {
 
 window.initProjectsPage = initProjectsPage;
 window.showNewProjectModal = showNewProjectModal;
+window.showEditProjectModal = showEditProjectModal;
 window.showNewProjectModalFromChat = showNewProjectModalFromChat;
 window.saveProjectModal = saveProjectModal;
 window.closeProjectModal = closeProjectModal;
@@ -1914,6 +1919,7 @@ window.saveProjectSettings = saveProjectSettings;
 window.archiveCurrentProject = archiveCurrentProject;
 window.deleteCurrentProject = deleteCurrentProject;
 window.showProjectListActionMenu = showProjectListActionMenu;
+window.editProjectFromListMenu = editProjectFromListMenu;
 window.toggleProjectArchiveFromListMenu = toggleProjectArchiveFromListMenu;
 window.deleteProjectFromListMenu = deleteProjectFromListMenu;
 window.refreshChatProjectSelector = refreshChatProjectSelector;

@@ -1476,10 +1476,7 @@
                                             <span id="projects-detail-status" class="projects-status-pill projects-status-pill--active" data-i18n="projects.statusActive">进行中</span>
                                         </div>
                                         <p id="projects-detail-meta" class="projects-detail-meta"></p>
-                                        <div id="projects-detail-desc-block" class="projects-detail-desc-block" hidden>
-                                            <p id="projects-detail-desc" class="projects-detail-desc is-collapsed"></p>
-                                            <button type="button" id="projects-detail-desc-toggle" class="projects-detail-desc-toggle" hidden onclick="toggleProjectDetailDesc()"></button>
-                                        </div>
+                                        <p id="projects-detail-desc" class="projects-detail-desc" hidden></p>
                                         <div class="projects-detail-stats" id="projects-detail-stats">
                                             <span class="projects-stat-chip" id="project-stat-facts">0 条事实</span>
                                             <span class="projects-stat-chip" id="project-stat-vulns">0 个漏洞</span>
@@ -3783,6 +3780,9 @@
 
     <!-- 项目列表操作菜单 -->
     <div id="projects-list-action-menu" class="context-menu" style="display: none;" role="menu">
+        <div id="projects-list-menu-edit" class="context-menu-item" onclick="editProjectFromListMenu()">
+            <span id="projects-list-menu-edit-text"></span>
+        </div>
         <div id="projects-list-menu-archive" class="context-menu-item" onclick="toggleProjectArchiveFromListMenu()">
             <span id="projects-list-menu-archive-text"></span>
         </div>
