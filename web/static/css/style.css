@@ -19255,6 +19255,12 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     display: flex;
     flex-direction: column;
     gap: 6px;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.agent-mode-options > .role-selection-item-main {
+    flex-shrink: 0;
 }
 
 /* 选项为 <button>，浏览器默认 text-align:center 会继承到文案，强制左对齐与角色列表一致 */
@@ -19286,7 +19292,7 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     left: 0;
     width: 340px;
     max-width: calc(100vw - 32px);
-    max-height: 60vh;
+    max-height: min(580px, 60vh);
     background: #ffffff;
     border: 1px solid rgba(0, 0, 0, 0.08);
     border-radius: 16px;
@@ -19296,6 +19302,7 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    min-height: 0;
     animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -19338,9 +19345,15 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     gap: 6px;
     /* 限制显示8个角色：每个角色约70px高度 + gap，8个角色约580px */
     max-height: 580px;
+    min-height: 0;
     overflow-y: auto;
     padding-right: 6px;
     flex: 1;
+}
+
+/* 防止 flex 列容器在高度受限时把列表项纵向压扁（应滚动而非压缩） */
+.role-selection-list-main > .role-selection-item-main {
+    flex-shrink: 0;
 }
 
 .role-selection-list-main::-webkit-scrollbar {
@@ -19376,7 +19389,8 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     position: relative;
     min-width: 0;
-    overflow: hidden;
+    flex-shrink: 0;
+    box-sizing: border-box;
 }
 
 .role-selection-item-main:hover {
