@@ -594,6 +594,9 @@ func (h *RobotHandler) cmdDelete(platform, userID, convID string) string {
 		h.mu.Unlock()
 		h.deleteSessionBinding(sk)
 	}
+	if h.agentHandler != nil {
+		h.agentHandler.CancelRunningTaskForConversation(convID)
+	}
 	if err := h.db.DeleteConversation(convID); err != nil {
 		return "删除失败: " + err.Error()
 	}

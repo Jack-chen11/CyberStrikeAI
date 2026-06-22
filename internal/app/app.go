@@ -368,6 +368,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	// 创建OpenAPI处理器
 	conversationHandler := handler.NewConversationHandler(db, log.Logger)
 	conversationHandler.SetAudit(auditSvc)
+	conversationHandler.SetTaskStopper(agentHandler)
 	auditHandler := handler.NewAuditHandler(db, auditSvc, log.Logger)
 	robotHandler := handler.NewRobotHandler(cfg, db, agentHandler, log.Logger)
 	openAPIHandler := handler.NewOpenAPIHandler(db, log.Logger, conversationHandler, agentHandler)

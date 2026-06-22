@@ -12,16 +12,27 @@ import (
 	"go.uber.org/zap"
 )
 
+// ConversationTaskStopper cancels in-flight agent work when a conversation is removed.
+type ConversationTaskStopper interface {
+	CancelRunningTaskForConversation(conversationID string)
+}
+
 // ConversationHandler 对话处理器
 type ConversationHandler struct {
-	db     *database.DB
-	logger *zap.Logger
-	audit  *audit.Service
+	db          *database.DB
+	logger      *zap.Logger
+	audit       *audit.Service
+	taskStopper ConversationTaskStopper
 }
 
 // SetAudit wires platform audit logging.
 func (h *ConversationHandler) SetAudit(s *audit.Service) {
 	h.audit = s
+}
+
+// SetTaskStopper wires cancellation of in-flight agent tasks on conversation delete.
+func (h *ConversationHandler) SetTaskStopper(stopper ConversationTaskStopper) {
+	h.taskStopper = stopper
 }
 
 // NewConversationHandler 创建新的对话处理器
@@ -244,6 +255,10 @@ func (h *ConversationHandler) UpdateConversation(c *gin.Context) {
 // DeleteConversation 删除对话
 func (h *ConversationHandler) DeleteConversation(c *gin.Context) {
 	id := c.Param("id")
+
+	if h.taskStopper != nil {
+		h.taskStopper.CancelRunningTaskForConversation(id)
+	}
 
 	if err := h.db.DeleteConversation(id); err != nil {
 		h.logger.Error("删除对话失败", zap.Error(err))

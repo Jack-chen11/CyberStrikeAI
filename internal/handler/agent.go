@@ -190,6 +190,21 @@ func (h *AgentHandler) SetAudit(s *audit.Service) {
 	h.audit = s
 }
 
+// CancelRunningTaskForConversation stops any in-flight agent work for the conversation (idempotent).
+func (h *AgentHandler) CancelRunningTaskForConversation(conversationID string) {
+	if h == nil || conversationID == "" || h.tasks == nil {
+		return
+	}
+	if execID := h.tasks.ActiveMCPExecutionID(conversationID); execID != "" {
+		h.agent.CancelMCPToolExecutionWithNote(execID, "")
+	}
+	if ok, err := h.tasks.CancelTask(conversationID, ErrTaskCancelled); ok {
+		h.logger.Info("已取消会话运行中任务", zap.String("conversationId", conversationID))
+	} else if err != nil {
+		h.logger.Warn("取消会话运行中任务失败", zap.String("conversationId", conversationID), zap.Error(err))
+	}
+}
+
 // HitlToolWhitelistSaver 合并 HITL 免审批工具到全局配置并落盘
 type HitlToolWhitelistSaver interface {
 	MergeHitlToolWhitelistIntoConfig(add []string) error
