@@ -142,10 +142,10 @@ multi_agent:
     plan_execute_max_step_result_runes: 4000 # plan_execute 每步结果最大字符数（超出截断）
     plan_execute_keep_last_steps: 8 # plan_execute 仅保留最近 N 步正文，早期步骤折叠为标题
     checkpoint_dir: data/eino-checkpoints # P0：进程崩溃/OOM 后同会话自动 ADK Resume；正常结束会删 .ckpt；与「中断并继续」(last_react_*) 是两套机制
-    run_retry_max_attempts: 0 # 429/5xx/网络抖动时整轮 Run 指数退避续跑；0=默认 10（与 deep_model_retry 互补，建议保持默认）
+    run_retry_max_attempts: 0 # 429/5xx/网络抖动时可退避重试次数（run loop + summarization 共用 isEinoTransientRunError）；0=默认 10
     run_retry_max_backoff_sec: 0 # 单次退避上限秒数；0=默认 30
     deep_output_key: final_answer # P0：Eino session 写入最终助手结论（框架内部；Deep/Supervisor 主/eino_single）
-    deep_model_retry_max_retries: 3 # P0：单次 ChatModel API 失败时框架自动重试（超时/502 等）；子代理模型不受此项影响
+    deep_model_retry_max_retries: 0 # 已废弃，请用 run_retry_max_attempts；保留字段仅为兼容旧配置
     task_tool_description_prefix: "" # 非空：仅 Deep 的 task 工具使用自定义描述前缀，运行时会拼接子代理名称；空则走 Eino 默认生成逻辑
   # Eino callbacks + OpenTelemetry：框架级 span（与 Zap 对齐）；默认不向终端用户 UI 推 eino_trace_*（见 sse_trace_to_client）
   eino_callbacks:
