@@ -740,14 +740,21 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 					"properties": map[string]interface{}{
 						"executions": map[string]interface{}{
 							"type":        "array",
-							"description": "执行记录列表",
+							"description": "执行记录列表（轻量字段，不含 arguments/result）",
 							"items": map[string]interface{}{
 								"$ref": "#/components/schemas/ToolExecution",
 							},
 						},
-						"stats": map[string]interface{}{
+						"summary": map[string]interface{}{
 							"type":        "object",
-							"description": "统计信息",
+							"description": "工具调用汇总",
+						},
+						"topTools": map[string]interface{}{
+							"type":        "array",
+							"description": "调用量 Top N 工具",
+							"items": map[string]interface{}{
+								"type": "object",
+							},
 						},
 						"timestamp": map[string]interface{}{
 							"type":        "string",
@@ -756,19 +763,23 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 						},
 						"total": map[string]interface{}{
 							"type":        "integer",
-							"description": "总数",
+							"description": "执行记录总数",
 						},
 						"page": map[string]interface{}{
 							"type":        "integer",
 							"description": "当前页",
 						},
-						"page_size": map[string]interface{}{
+						"pageSize": map[string]interface{}{
 							"type":        "integer",
 							"description": "每页数量",
 						},
-						"total_pages": map[string]interface{}{
+						"totalPages": map[string]interface{}{
 							"type":        "integer",
 							"description": "总页数",
+						},
+						"retentionDays": map[string]interface{}{
+							"type":        "integer",
+							"description": "执行记录保留天数",
 						},
 					},
 				},
