@@ -3547,6 +3547,7 @@ const monitorState = {
     timelineLoading: false,
     lastFetchedAt: null,
     retentionDays: 0,
+    selectedExecutions: new Set(),
     pagination: {
         page: 1,
         pageSize: (() => {
@@ -5063,10 +5064,12 @@ function renderMonitorExecutions(executions = [], statusFilter = 'all') {
             const terminateBtn = status === 'running'
                 ? `<button type="button" class="btn-secondary btn-monitor-abort" onclick="cancelMCPToolExecution('${rawExecId.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')">${escapeHtml(terminateLabel)}</button>`
                 : '';
+            const jsExecId = rawExecId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const isSelected = monitorState.selectedExecutions.has(rawExecId);
             return `
                 <tr>
                     <td>
-                        <input type="checkbox" class="monitor-execution-checkbox" value="${executionId}" onchange="updateBatchActionsState()" />
+                        <input type="checkbox" class="monitor-execution-checkbox" value="${executionId}" ${isSelected ? 'checked' : ''} onchange="toggleExecutionSelection('${jsExecId}', this.checked)" />
                     </td>
                     <td>${toolName}</td>
                     <td><span class="${statusClass}">${escapeHtml(statusLabel)}</span></td>
@@ -5212,6 +5215,8 @@ async function deleteExecution(executionId) {
             throw new Error(error.error || deleteFailedMsg);
         }
         
+        monitorState.selectedExecutions.delete(executionId);
+
         // 删除成功后刷新当前页面
         const currentPage = monitorState.pagination.page;
         await refreshMonitorPanel(currentPage);
@@ -5225,10 +5230,22 @@ async function deleteExecution(executionId) {
     }
 }
 
+// 切换单条执行记录选中状态（持久化到 monitorState，避免轮询刷新后丢失）
+function toggleExecutionSelection(executionId, selected) {
+    if (!executionId) {
+        return;
+    }
+    if (selected) {
+        monitorState.selectedExecutions.add(executionId);
+    } else {
+        monitorState.selectedExecutions.delete(executionId);
+    }
+    updateBatchActionsState();
+}
+
 // 更新批量操作状态
 function updateBatchActionsState() {
-    const checkboxes = document.querySelectorAll('.monitor-execution-checkbox:checked');
-    const selectedCount = checkboxes.length;
+    const selectedCount = monitorState.selectedExecutions.size;
     const batchActions = document.getElementById('monitor-batch-actions');
     const selectedCountSpan = document.getElementById('monitor-selected-count');
     
@@ -5245,13 +5262,18 @@ function updateBatchActionsState() {
         selectedCountSpan.textContent = typeof window.t === 'function' ? window.t('mcp.selectedCount', { count: selectedCount }) : '已选择 ' + selectedCount + ' 项';
     }
     
-    // 更新全选复选框状态
+    // 更新全选复选框状态（仅反映当前页）
     const selectAllCheckbox = document.getElementById('monitor-select-all');
     if (selectAllCheckbox) {
         const allCheckboxes = document.querySelectorAll('.monitor-execution-checkbox');
-        const allChecked = allCheckboxes.length > 0 && Array.from(allCheckboxes).every(cb => cb.checked);
-        selectAllCheckbox.checked = allChecked;
-        selectAllCheckbox.indeterminate = selectedCount > 0 && selectedCount < allCheckboxes.length;
+        if (allCheckboxes.length === 0) {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = false;
+        } else {
+            const checkedOnPage = Array.from(allCheckboxes).filter(cb => monitorState.selectedExecutions.has(cb.value)).length;
+            selectAllCheckbox.checked = checkedOnPage === allCheckboxes.length;
+            selectAllCheckbox.indeterminate = checkedOnPage > 0 && checkedOnPage < allCheckboxes.length;
+        }
     }
 }
 
@@ -5260,6 +5282,11 @@ function toggleSelectAll(checkbox) {
     const checkboxes = document.querySelectorAll('.monitor-execution-checkbox');
     checkboxes.forEach(cb => {
         cb.checked = checkbox.checked;
+        if (checkbox.checked) {
+            monitorState.selectedExecutions.add(cb.value);
+        } else {
+            monitorState.selectedExecutions.delete(cb.value);
+        }
     });
     updateBatchActionsState();
 }
@@ -5269,6 +5296,7 @@ function selectAllExecutions() {
     const checkboxes = document.querySelectorAll('.monitor-execution-checkbox');
     checkboxes.forEach(cb => {
         cb.checked = true;
+        monitorState.selectedExecutions.add(cb.value);
     });
     const selectAllCheckbox = document.getElementById('monitor-select-all');
     if (selectAllCheckbox) {
@@ -5284,6 +5312,7 @@ function deselectAllExecutions() {
     checkboxes.forEach(cb => {
         cb.checked = false;
     });
+    monitorState.selectedExecutions.clear();
     const selectAllCheckbox = document.getElementById('monitor-select-all');
     if (selectAllCheckbox) {
         selectAllCheckbox.checked = false;
@@ -5294,14 +5323,12 @@ function deselectAllExecutions() {
 
 // 批量删除执行记录
 async function batchDeleteExecutions() {
-    const checkboxes = document.querySelectorAll('.monitor-execution-checkbox:checked');
-    if (checkboxes.length === 0) {
+    const ids = Array.from(monitorState.selectedExecutions);
+    if (ids.length === 0) {
         const selectFirstMsg = typeof window.t === 'function' ? window.t('mcpMonitor.selectExecFirst') : '请先选择要删除的执行记录';
         alert(selectFirstMsg);
         return;
     }
-    
-    const ids = Array.from(checkboxes).map(cb => cb.value);
     const count = ids.length;
     const batchConfirmMsg = typeof window.t === 'function' ? window.t('mcpMonitor.batchDeleteConfirm', { count: count }) : `确定要删除选中的 ${count} 条执行记录吗？此操作不可恢复。`;
     if (!confirm(batchConfirmMsg)) {
@@ -5325,6 +5352,10 @@ async function batchDeleteExecutions() {
         
         const result = await response.json().catch(() => ({}));
         const deletedCount = result.deleted || count;
+
+        ids.forEach(function (id) {
+            monitorState.selectedExecutions.delete(id);
+        });
         
         // 删除成功后刷新当前页面
         const currentPage = monitorState.pagination.page;

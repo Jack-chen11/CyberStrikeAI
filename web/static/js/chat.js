@@ -3322,6 +3322,18 @@ function createConversationListItem(conversation) {
     title.title = titleText; // 设置完整标题以便悬停查看
     contentWrapper.appendChild(title);
 
+    if (!getConversationProjectFilter()) {
+        const pid = conversation.projectId || conversation.project_id || '';
+        const projectName = pid && window.projectNameById ? window.projectNameById[pid] : '';
+        if (projectName) {
+            const badge = document.createElement('div');
+            badge.className = 'conversation-item-project-badge';
+            badge.textContent = projectName;
+            badge.title = projectName;
+            contentWrapper.appendChild(badge);
+        }
+    }
+
     const time = document.createElement('div');
     time.className = 'conversation-time';
     time.textContent = conversation._timeText || formatConversationTimestamp(conversation._time || new Date());
@@ -3867,14 +3879,7 @@ async function deleteConversation(conversationId, skipConfirm = false) {
         const batchModal = document.getElementById('batch-manage-modal');
         if (batchModal && isAppModalOpen('batch-manage-modal')) {
             allConversationsForBatch = allConversationsForBatch.filter(c => c.id !== conversationId);
-            updateBatchManageTitle(allConversationsForBatch.length);
-            const searchInput = document.getElementById('batch-search-input');
-            const query = searchInput ? searchInput.value : '';
-            if (query && query.trim()) {
-                filterBatchConversations(query);
-            } else {
-                renderBatchConversations();
-            }
+            applyBatchConversationFilters();
         }
 
         // 通知其他模块（如 WebShell AI 助手）同步删除，保持列表一致
@@ -6075,6 +6080,266 @@ let pendingGroupMappings = {}; // 待保留的分组映射（用于处理后端A
 let conversationsListLoadSeq = 0; // 对话列表加载序号，避免并发请求导致重复渲染
 const CONVERSATIONS_PAGE_SIZE_KEY = 'cyberstrike.conversations_page_size';
 const CONVERSATIONS_SORT_KEY = 'cyberstrike.conversations_sort_by';
+const CONVERSATIONS_PROJECT_FILTER_KEY = 'cyberstrike.conversations_project_filter';
+const CONVERSATION_PROJECT_FILTER_NONE = '__none__';
+const CONVERSATION_PROJECT_FILTER_SELECT_ID = 'conversation-project-filter';
+const CONVERSATION_PROJECT_FILTER_CARET = '<svg class="conversation-project-filter-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const BATCH_PROJECT_FILTER_SELECT_ID = 'batch-project-filter';
+const projectFilterCustomSelectRegistry = {};
+let projectFilterCustomSelectDocBound = false;
+
+function closeProjectFilterCustomSelect(selectId) {
+    const reg = projectFilterCustomSelectRegistry[selectId];
+    if (!reg || !reg.wrapper) return;
+    reg.wrapper.classList.remove('open');
+    if (reg.trigger) reg.trigger.setAttribute('aria-expanded', 'false');
+}
+
+function closeAllProjectFilterCustomSelects() {
+    Object.keys(projectFilterCustomSelectRegistry).forEach(closeProjectFilterCustomSelect);
+}
+
+function syncProjectFilterCustomSelect(selectId) {
+    const reg = projectFilterCustomSelectRegistry[selectId];
+    if (!reg) return;
+    const { select, dropdown, trigger } = reg;
+    const valueSpan = trigger.querySelector('.conversation-project-filter-value');
+    dropdown.innerHTML = '';
+    Array.prototype.forEach.call(select.options, (opt) => {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'conversation-project-filter-option';
+        item.setAttribute('role', 'option');
+        item.setAttribute('data-value', opt.value);
+        const labelText = opt.textContent || '';
+        item.title = labelText;
+        if (opt.value === select.value) {
+            item.classList.add('is-selected');
+            item.setAttribute('aria-selected', 'true');
+        } else {
+            item.setAttribute('aria-selected', 'false');
+        }
+        const check = document.createElement('span');
+        check.className = 'conversation-project-filter-check';
+        check.setAttribute('aria-hidden', 'true');
+        check.textContent = '✓';
+        const label = document.createElement('span');
+        label.className = 'conversation-project-filter-option-label';
+        label.textContent = labelText;
+        label.title = labelText;
+        item.appendChild(check);
+        item.appendChild(label);
+        dropdown.appendChild(item);
+    });
+    const selectedOpt = select.options[select.selectedIndex];
+    const selectedText = selectedOpt ? (selectedOpt.textContent || '') : '';
+    if (valueSpan) {
+        valueSpan.textContent = selectedText;
+        valueSpan.title = selectedText;
+    }
+}
+
+function initProjectFilterCustomSelect(selectId) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    if (select.dataset.projectCustomSelect === '1') {
+        syncProjectFilterCustomSelect(selectId);
+        return;
+    }
+    select.dataset.projectCustomSelect = '1';
+    select.classList.add('conversation-project-filter-native');
+    select.tabIndex = -1;
+    select.setAttribute('aria-hidden', 'true');
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'conversation-project-filter-ui';
+
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'conversation-project-filter-trigger';
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-expanded', 'false');
+    const valueSpan = document.createElement('span');
+    valueSpan.className = 'conversation-project-filter-value';
+    trigger.appendChild(valueSpan);
+    trigger.insertAdjacentHTML('beforeend', CONVERSATION_PROJECT_FILTER_CARET);
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'conversation-project-filter-dropdown';
+    dropdown.setAttribute('role', 'listbox');
+
+    const parent = select.parentNode;
+    parent.insertBefore(wrapper, select);
+    wrapper.appendChild(trigger);
+    wrapper.appendChild(dropdown);
+    wrapper.appendChild(select);
+
+    projectFilterCustomSelectRegistry[selectId] = { wrapper, trigger, dropdown, select };
+
+    trigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const open = wrapper.classList.contains('open');
+        closeAllProjectFilterCustomSelects();
+        if (!open) {
+            wrapper.classList.add('open');
+            trigger.setAttribute('aria-expanded', 'true');
+        }
+    });
+
+    dropdown.addEventListener('click', (e) => {
+        const opt = e.target.closest('.conversation-project-filter-option');
+        if (!opt) return;
+        e.stopPropagation();
+        const val = opt.getAttribute('data-value');
+        if (val === null) return;
+        if (select.value !== val) {
+            select.value = val;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        closeProjectFilterCustomSelect(selectId);
+        syncProjectFilterCustomSelect(selectId);
+    });
+
+    if (!projectFilterCustomSelectDocBound) {
+        projectFilterCustomSelectDocBound = true;
+        document.addEventListener('click', closeAllProjectFilterCustomSelects);
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeAllProjectFilterCustomSelects();
+        });
+    }
+    syncProjectFilterCustomSelect(selectId);
+}
+
+function syncConversationProjectCustomSelect() {
+    syncProjectFilterCustomSelect(CONVERSATION_PROJECT_FILTER_SELECT_ID);
+}
+
+function initConversationProjectCustomSelect() {
+    initProjectFilterCustomSelect(CONVERSATION_PROJECT_FILTER_SELECT_ID);
+}
+
+function getConversationProjectFilter() {
+    try {
+        return localStorage.getItem(CONVERSATIONS_PROJECT_FILTER_KEY) || '';
+    } catch (e) {
+        return '';
+    }
+}
+
+function setConversationProjectFilter(projectId) {
+    const value = (projectId || '').trim();
+    try {
+        if (value) localStorage.setItem(CONVERSATIONS_PROJECT_FILTER_KEY, value);
+        else localStorage.removeItem(CONVERSATIONS_PROJECT_FILTER_KEY);
+    } catch (e) { /* ignore */ }
+    const sel = document.getElementById('conversation-project-filter');
+    if (sel && sel.value !== value) sel.value = value;
+    syncConversationProjectCustomSelect();
+    updateConversationSidebarFilterUI();
+}
+
+function isValidConversationProjectFilter(projectId) {
+    if (!projectId) return true;
+    if (projectId === CONVERSATION_PROJECT_FILTER_NONE) return true;
+    const map = window.projectNameById;
+    if (!map || typeof map !== 'object') return true;
+    return Object.prototype.hasOwnProperty.call(map, projectId);
+}
+
+async function refreshConversationProjectFilter() {
+    const sel = document.getElementById('conversation-project-filter');
+    if (!sel) return;
+    const saved = getConversationProjectFilter();
+    let projects = [];
+    if (typeof window.ensureProjectsLoaded === 'function') {
+        try {
+            const list = await window.ensureProjectsLoaded();
+            projects = (list || []).filter((p) => p && p.id && p.status !== 'archived');
+        } catch (e) { /* ignore */ }
+    }
+    if (!projects.length) {
+        try {
+            const res = await apiFetch('/api/projects?status=active&limit=200');
+            if (res.ok) {
+                const data = await res.json();
+                const items = data.projects || data.items || (Array.isArray(data) ? data : []);
+                projects = items.filter((p) => p && p.id);
+                if (typeof window.rebuildProjectNameMap === 'function') {
+                    window.rebuildProjectNameMap(items);
+                }
+            }
+        } catch (e) { /* ignore */ }
+    }
+    const tFn = typeof window.t === 'function' ? window.t.bind(window) : null;
+    const allLabel = tFn ? tFn('chat.filterAllProjects') : '全部项目';
+    const unboundLabel = tFn ? tFn('chat.filterUnboundProjects') : '未绑定项目';
+    sel.innerHTML = '';
+    const allOpt = document.createElement('option');
+    allOpt.value = '';
+    allOpt.textContent = allLabel;
+    allOpt.setAttribute('data-i18n', 'chat.filterAllProjects');
+    sel.appendChild(allOpt);
+    const unboundOpt = document.createElement('option');
+    unboundOpt.value = CONVERSATION_PROJECT_FILTER_NONE;
+    unboundOpt.textContent = unboundLabel;
+    unboundOpt.setAttribute('data-i18n', 'chat.filterUnboundProjects');
+    sel.appendChild(unboundOpt);
+    projects
+        .slice()
+        .sort((a, b) => (a.name || a.id || '').localeCompare(b.name || b.id || '', undefined, { sensitivity: 'base' }))
+        .forEach((p) => {
+            const opt = document.createElement('option');
+            opt.value = p.id;
+            opt.textContent = p.name || p.id;
+            sel.appendChild(opt);
+        });
+    const normalized = isValidConversationProjectFilter(saved) ? saved : '';
+    if (normalized !== saved) setConversationProjectFilter(normalized);
+    sel.value = normalized;
+    syncConversationProjectCustomSelect();
+    updateConversationSidebarFilterUI();
+}
+
+function onConversationProjectFilterChange(projectId) {
+    setConversationProjectFilter(projectId || '');
+    conversationsPagination.page = 1;
+    loadConversationsWithGroups(conversationsSearchQuery);
+}
+
+function updateConversationSidebarFilterUI() {
+    const groupsSection = document.querySelector('.conversation-groups-section');
+    const titleEl = document.querySelector('.recent-conversations-section .section-title');
+    const filter = getConversationProjectFilter();
+    const hasSearch = !!(conversationsSearchQuery && conversationsSearchQuery.trim());
+    if (groupsSection) {
+        groupsSection.hidden = !!filter || hasSearch;
+    }
+    if (!titleEl) return;
+    const tFn = typeof window.t === 'function' ? window.t.bind(window) : null;
+    if (filter && filter !== CONVERSATION_PROJECT_FILTER_NONE) {
+        const name = (window.projectNameById && window.projectNameById[filter]) || filter;
+        const fullTitle = tFn ? tFn('chat.projectConversationsTitle', { name }) : `${name} · 对话`;
+        titleEl.textContent = fullTitle;
+        titleEl.title = fullTitle;
+        titleEl.classList.add('section-title--filtered');
+        titleEl.removeAttribute('data-i18n');
+    } else if (filter === CONVERSATION_PROJECT_FILTER_NONE) {
+        const fullTitle = tFn ? tFn('chat.unboundConversationsTitle') : '未绑定项目';
+        titleEl.textContent = fullTitle;
+        titleEl.title = fullTitle;
+        titleEl.classList.add('section-title--filtered');
+        titleEl.setAttribute('data-i18n', 'chat.unboundConversationsTitle');
+    } else {
+        titleEl.classList.remove('section-title--filtered');
+        titleEl.removeAttribute('title');
+        titleEl.setAttribute('data-i18n', 'chat.recentConversations');
+        if (tFn) titleEl.textContent = tFn('chat.recentConversations');
+    }
+}
+
+window.onConversationProjectBindingChanged = function onConversationProjectBindingChanged() {
+    loadConversationsWithGroups(conversationsSearchQuery);
+};
 
 function getConversationSortBy() {
     try {
@@ -6252,6 +6517,13 @@ async function fetchAllConversations(searchQuery) {
 }
 
 function getConversationListEmptyHtml() {
+    const filter = getConversationProjectFilter();
+    if (filter && filter !== CONVERSATION_PROJECT_FILTER_NONE) {
+        return '<div class="conversations-list-empty" data-i18n="chat.noProjectConversations"></div>';
+    }
+    if (filter === CONVERSATION_PROJECT_FILTER_NONE) {
+        return '<div class="conversations-list-empty" data-i18n="chat.noUnboundConversations"></div>';
+    }
     return '<div class="conversations-list-empty" data-i18n="chat.noHistoryConversations"></div>';
 }
 
@@ -6428,11 +6700,16 @@ async function loadConversationsWithGroups(searchQuery = '') {
         if (conversationSortBy === 'created_at') {
             convParams.set('sort_by', 'created_at');
         }
+        const projectFilter = getConversationProjectFilter();
+        if (projectFilter) {
+            convParams.set('project_id', projectFilter);
+        }
         if (searchQuery && searchQuery.trim()) {
             convParams.set('search', searchQuery.trim());
-        } else {
+        } else if (!projectFilter) {
             convParams.set('exclude_grouped', 'true');
         }
+        updateConversationSidebarFilterUI();
         const url = `/api/conversations?${convParams}`;
         const [,, response] = await Promise.all([
             loadGroups(),
@@ -6488,11 +6765,22 @@ async function loadConversationsWithGroups(searchQuery = '') {
         const pinnedConvs = [];
         const normalConvs = [];
         const hasSearchQuery = searchQuery && searchQuery.trim();
+        const hasProjectFilter = !!getConversationProjectFilter();
 
         uniqueConversations.forEach(conv => {
             // 如果有搜索关键词，显示所有匹配的对话（全局搜索，包括分组中的）
             if (hasSearchQuery) {
                 // 搜索时显示所有匹配的对话，不管是否在分组中
+                if (conv.pinned) {
+                    pinnedConvs.push(conv);
+                } else {
+                    normalConvs.push(conv);
+                }
+                return;
+            }
+
+            // 按项目筛选时展示该项目下全部对话（含分组内）
+            if (hasProjectFilter) {
                 if (conv.pinned) {
                     pinnedConvs.push(conv);
                 } else {
@@ -7731,6 +8019,84 @@ function closeContextMenu() {
 // 显示批量管理模态框
 let allConversationsForBatch = [];
 
+function getConversationProjectId(conv) {
+    return (conv?.projectId || conv?.project_id || '').trim();
+}
+
+function getConversationProjectLabel(conv) {
+    const pid = getConversationProjectId(conv);
+    if (!pid) {
+        return typeof window.t === 'function' ? window.t('batchManageModal.noProject') : '无项目';
+    }
+    return (window.projectNameById && window.projectNameById[pid]) || pid;
+}
+
+async function refreshBatchProjectFilter() {
+    const sel = document.getElementById('batch-project-filter');
+    if (!sel) return;
+    const saved = sel.value || '';
+    if (typeof window.ensureProjectsLoaded === 'function') {
+        try {
+            await window.ensureProjectsLoaded();
+        } catch (e) { /* ignore */ }
+    }
+    const tFn = typeof window.t === 'function' ? window.t.bind(window) : null;
+    const allLabel = tFn ? tFn('chat.filterAllProjects') : '全部项目';
+    const unboundLabel = tFn ? tFn('chat.filterUnboundProjects') : '未绑定项目';
+    sel.innerHTML = '';
+    const allOpt = document.createElement('option');
+    allOpt.value = '';
+    allOpt.textContent = allLabel;
+    allOpt.setAttribute('data-i18n', 'chat.filterAllProjects');
+    sel.appendChild(allOpt);
+    const unboundOpt = document.createElement('option');
+    unboundOpt.value = CONVERSATION_PROJECT_FILTER_NONE;
+    unboundOpt.textContent = unboundLabel;
+    unboundOpt.setAttribute('data-i18n', 'chat.filterUnboundProjects');
+    sel.appendChild(unboundOpt);
+    const source = window.projectNameById ? Object.keys(window.projectNameById) : [];
+    source
+        .sort((a, b) => {
+            const na = (window.projectNameById[a] || a).toLowerCase();
+            const nb = (window.projectNameById[b] || b).toLowerCase();
+            return na.localeCompare(nb);
+        })
+        .forEach((id) => {
+            const opt = document.createElement('option');
+            opt.value = id;
+            opt.textContent = window.projectNameById[id] || id;
+            sel.appendChild(opt);
+        });
+    const valid = !saved || saved === CONVERSATION_PROJECT_FILTER_NONE || (window.projectNameById && window.projectNameById[saved]);
+    sel.value = valid ? saved : '';
+    syncProjectFilterCustomSelect(BATCH_PROJECT_FILTER_SELECT_ID);
+}
+
+function getBatchFilteredConversations() {
+    const query = (document.getElementById('batch-search-input')?.value || '').trim().toLowerCase();
+    const projectFilter = (document.getElementById('batch-project-filter')?.value || '').trim();
+    return allConversationsForBatch.filter((conv) => {
+        const pid = getConversationProjectId(conv);
+        if (projectFilter) {
+            if (projectFilter === CONVERSATION_PROJECT_FILTER_NONE) {
+                if (pid) return false;
+            } else if (pid !== projectFilter) {
+                return false;
+            }
+        }
+        if (!query) return true;
+        const title = (conv.title || '').toLowerCase();
+        const projectName = getConversationProjectLabel(conv).toLowerCase();
+        return title.includes(query) || projectName.includes(query);
+    });
+}
+
+function applyBatchConversationFilters() {
+    const filtered = getBatchFilteredConversations();
+    updateBatchManageTitle(filtered.length);
+    renderBatchConversations(filtered);
+}
+
 // 更新批量管理模态框标题（含条数），支持 i18n；count 为当前条数
 function updateBatchManageTitle(count) {
     const titleEl = document.getElementById('batch-manage-title');
@@ -7742,19 +8108,27 @@ function updateBatchManageTitle(count) {
 
 async function showBatchManageModal() {
     try {
+        initProjectFilterCustomSelect(BATCH_PROJECT_FILTER_SELECT_ID);
         allConversationsForBatch = await fetchAllConversations('');
-
-        const modal = document.getElementById('batch-manage-modal');
-        updateBatchManageTitle(allConversationsForBatch.length);
-
-        renderBatchConversations();
+        await refreshBatchProjectFilter();
+        const sidebarFilter = getConversationProjectFilter();
+        const batchSel = document.getElementById('batch-project-filter');
+        if (batchSel && sidebarFilter && (
+            sidebarFilter === CONVERSATION_PROJECT_FILTER_NONE ||
+            (window.projectNameById && window.projectNameById[sidebarFilter])
+        )) {
+            batchSel.value = sidebarFilter;
+        }
+        const searchInput = document.getElementById('batch-search-input');
+        if (searchInput) searchInput.value = '';
+        applyBatchConversationFilters();
         openAppModal('batch-manage-modal', { focus: false });
     } catch (error) {
         console.error('加载对话列表失败:', error);
-        // 错误时使用空数组，不显示错误提示（更友好的用户体验）
+        initProjectFilterCustomSelect(BATCH_PROJECT_FILTER_SELECT_ID);
         allConversationsForBatch = [];
-        updateBatchManageTitle(0);
-        renderBatchConversations();
+        await refreshBatchProjectFilter();
+        applyBatchConversationFilters();
         openAppModal('batch-manage-modal', { focus: false });
     }
 }
@@ -7817,14 +8191,26 @@ function renderBatchConversations(filtered = null) {
         checkbox.dataset.conversationId = conv.id;
         checkbox.addEventListener('change', syncSelectAllBatchCheckbox);
 
+        const checkboxCol = document.createElement('div');
+        checkboxCol.className = 'batch-table-col-checkbox';
+        checkboxCol.appendChild(checkbox);
+
         const name = document.createElement('div');
         name.className = 'batch-table-col-name';
         const originalTitle = conv.title || (typeof window.t === 'function' ? window.t('batchManageModal.unnamedConversation') : '未命名对话');
-        // 使用安全截断函数，限制最大长度为45个字符（留出空间显示省略号）
-        const truncatedTitle = safeTruncateText(originalTitle, 45);
+        const truncatedTitle = safeTruncateText(originalTitle, 36);
         name.textContent = truncatedTitle;
-        // 设置title属性以显示完整文本（鼠标悬停时）
         name.title = originalTitle;
+
+        const project = document.createElement('div');
+        project.className = 'batch-table-col-project';
+        const projectLabel = getConversationProjectLabel(conv);
+        const truncatedProject = safeTruncateText(projectLabel, 28);
+        project.textContent = truncatedProject;
+        project.title = projectLabel;
+        if (!getConversationProjectId(conv)) {
+            project.classList.add('is-unbound');
+        }
 
         const time = document.createElement('div');
         time.className = 'batch-table-col-time';
@@ -7858,8 +8244,9 @@ function renderBatchConversations(filtered = null) {
         };
         action.appendChild(deleteBtn);
 
-        row.appendChild(checkbox);
+        row.appendChild(checkboxCol);
         row.appendChild(name);
+        row.appendChild(project);
         row.appendChild(time);
         row.appendChild(action);
 
@@ -7870,18 +8257,8 @@ function renderBatchConversations(filtered = null) {
 }
 
 // 筛选批量管理对话
-function filterBatchConversations(query) {
-    if (!query || !query.trim()) {
-        renderBatchConversations();
-        return;
-    }
-
-    const filtered = allConversationsForBatch.filter(conv => {
-        const title = (conv.title || '').toLowerCase();
-        return title.includes(query.toLowerCase());
-    });
-
-    renderBatchConversations(filtered);
+function filterBatchConversations() {
+    applyBatchConversationFilters();
 }
 
 // 全选/取消全选
@@ -7958,6 +8335,10 @@ function closeBatchManageModal() {
         selectAll.checked = false;
         selectAll.indeterminate = false;
     }
+    const searchInput = document.getElementById('batch-search-input');
+    if (searchInput) searchInput.value = '';
+    const batchProj = document.getElementById('batch-project-filter');
+    if (batchProj) batchProj.value = '';
     allConversationsForBatch = [];
 }
 
@@ -8030,7 +8411,7 @@ document.addEventListener('languagechange', function () {
     refreshChatPanelI18n();
     const modal = document.getElementById('batch-manage-modal');
     if (isAppModalOpen('batch-manage-modal')) {
-        updateBatchManageTitle(allConversationsForBatch.length);
+        refreshBatchProjectFilter().then(() => applyBatchConversationFilters());
     }
     // 侧边栏最近对话等列表的时间戳会随语言变化（24h/12h 等），重新拉列表以统一格式
     if (typeof loadConversationsWithGroups === 'function') {
@@ -8962,6 +9343,8 @@ function clearGroupSearch() {
 // 初始化时加载分组
 document.addEventListener('DOMContentLoaded', async () => {
     updateConversationSortMenuUI();
+    initConversationProjectCustomSelect();
+    await refreshConversationProjectFilter();
     await loadGroups();
     await loadConversationsWithGroups();
     
@@ -9018,8 +9401,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 });
 
+async function refreshAllProjectFilterSelects() {
+    await refreshConversationProjectFilter();
+    await refreshBatchProjectFilter();
+}
+
 // 顶层 async function 不会自动挂到 window，hitl 等脚本依赖 window.loadConversation
 if (typeof window !== 'undefined') {
     window.loadConversation = loadConversation;
     window.startNewConversation = startNewConversation;
+    window.refreshConversationProjectFilter = refreshConversationProjectFilter;
+    window.refreshAllProjectFilterSelects = refreshAllProjectFilterSelects;
+    window.onConversationProjectFilterChange = onConversationProjectFilterChange;
 }

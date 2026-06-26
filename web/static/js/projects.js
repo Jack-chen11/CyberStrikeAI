@@ -293,6 +293,9 @@ async function ensureProjectsLoaded(force) {
             projectsCacheAll = list;
             rebuildProjectNameMap(projectsCacheAll);
             _projectsListReady = true;
+            if (typeof window.refreshConversationProjectFilter === 'function') {
+                window.refreshConversationProjectFilter();
+            }
             return projectsCacheAll;
         })
         .catch((e) => {
@@ -370,6 +373,9 @@ async function loadProjectsList() {
     }
     if (typeof refreshVulnerabilityProjectFilter === 'function') {
         refreshVulnerabilityProjectFilter();
+    }
+    if (typeof window.refreshAllProjectFilterSelects === 'function') {
+        await window.refreshAllProjectFilterSelects();
     }
 }
 
@@ -2198,6 +2204,9 @@ async function applyChatProjectSelection(projectId) {
         setActiveProjectId(projectId);
     }
     updateChatProjectButtonLabel();
+    if (typeof window.onConversationProjectBindingChanged === 'function') {
+        window.onConversationProjectBindingChanged(projectId);
+    }
 }
 
 /** 对话页项目选择器：同步按钮文案；若浮层已打开则刷新列表 */
@@ -2326,3 +2335,4 @@ window.focusProjectFactGraphEdge = focusProjectFactGraphEdge;
 window.toggleProjectFactGraphConnectMode = toggleProjectFactGraphConnectMode;
 window.rebuildProjectNameMap = rebuildProjectNameMap;
 window.projectNameById = projectNameById;
+window.ensureProjectsLoaded = ensureProjectsLoaded;
