@@ -22,13 +22,19 @@ import (
 	"go.uber.org/zap"
 )
 
-// einoSummarizeUserInstruction：压缩历史时保留渗透测试关键信息。
+// einoSummarizeUserInstruction：压缩历史时保留渗透测试与用户约束关键信息。
 const einoSummarizeUserInstruction = `在保持所有关键安全测试信息完整的前提下压缩对话历史。
 
 必须保留：已确认漏洞与攻击路径、工具输出中的核心发现、凭证与认证细节、架构与薄弱点、当前进度、失败尝试与死路、策略决策。
 保留精确技术细节（URL、路径、参数、Payload、版本号、报错原文可摘要但要点不丢）。
 将冗长扫描输出概括为结论；重复发现合并表述。
 已枚举资产须保留**可继承的摘要**：主域、关键子域/主机短表（或数量+代表样例）、高价值目标与已识别服务/端口要点，避免后续子代理因「看不见清单」而重复全量枚举。
+
+用户消息中的约束须精确保留（可摘要表述，但要点不可丢或改写）：
+- 授权测试目标、范围与禁止项（域名、路径、IP、环境）
+- 用户提供的凭证、账号、Cookie、Token（敏感值原文保留）
+- 用户指定的方法、工具、优先级与待办
+- 用户明确的否定约束（不要测什么、不要用什么手法）
 
 输出须使后续代理能无缝继续同一授权测试任务。`
 
@@ -150,7 +156,6 @@ func newEinoSummarizationMiddleware(
 			}
 			if appCfg != nil {
 				out = refreshFactIndexInMessages(out, db, projectID, appCfg.Project, logger)
-				out = refreshUserVerbatimAnchorInMessages(out, db, conversationID, appCfg.MultiAgent.UserVerbatimAnchorMaxRunesEffective(), logger)
 			}
 			return out, nil
 		},
@@ -412,36 +417,6 @@ func writeSummarizationTranscript(path string, msgs []adk.Message) error {
 		return fmt.Errorf("write transcript: %w", err)
 	}
 	return nil
-}
-
-// refreshUserVerbatimAnchorInMessages 压缩后从 messages 表刷新 system 中的用户原文锚点。
-func refreshUserVerbatimAnchorInMessages(msgs []adk.Message, db *database.DB, conversationID string, maxRunes int, logger *zap.Logger) []adk.Message {
-	if maxRunes < 0 || db == nil {
-		return msgs
-	}
-	conversationID = strings.TrimSpace(conversationID)
-	if conversationID == "" {
-		return msgs
-	}
-	rows, err := db.GetMessages(conversationID)
-	if err != nil {
-		if logger != nil {
-			logger.Warn("summarization: 刷新用户原文锚点失败",
-				zap.String("conversationId", conversationID),
-				zap.Error(err),
-			)
-		}
-		return msgs
-	}
-	block := project.BuildUserVerbatimAnchorBlockFromMessages(rows, maxRunes)
-	if block == "" {
-		return msgs
-	}
-	out := project.RefreshUserVerbatimAnchorInMessages(msgs, block)
-	if logger != nil {
-		logger.Info("summarization: 已刷新用户原文锚点", zap.String("conversationId", conversationID))
-	}
-	return out
 }
 
 func einoSummarizationTokenCounter(openAIModel string) summarization.TokenCounterFunc {
