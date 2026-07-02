@@ -389,10 +389,35 @@ async function loadConfig(loadTools = true) {
                 subIdxFilterInput.value = knowledge.retrieval?.sub_index_filter || '';
             }
 
+            const mq = knowledge.retrieval?.multi_query || {};
+            const mqMaxInput = document.getElementById('knowledge-multi-query-max-queries');
+            if (mqMaxInput) {
+                const mqVal = parseInt(mq.max_queries, 10);
+                mqMaxInput.value = (!isNaN(mqVal) && mqVal > 0) ? mqVal : 4;
+            }
+            const rr = knowledge.retrieval?.rerank || {};
+            const rerankProviderSelect = document.getElementById('knowledge-rerank-provider');
+            if (rerankProviderSelect) {
+                const p = (rr.provider || '').toLowerCase();
+                rerankProviderSelect.value = (p === 'dashscope' || p === 'cohere') ? p : '';
+            }
+            const rerankModelInput = document.getElementById('knowledge-rerank-model');
+            if (rerankModelInput) {
+                rerankModelInput.value = rr.model || '';
+            }
+            const rerankBaseUrlInput = document.getElementById('knowledge-rerank-base-url');
+            if (rerankBaseUrlInput) {
+                rerankBaseUrlInput.value = rr.base_url || '';
+            }
+            const rerankApiKeyInput = document.getElementById('knowledge-rerank-api-key');
+            if (rerankApiKeyInput) {
+                rerankApiKeyInput.value = rr.api_key || '';
+            }
+
             const post = knowledge.retrieval?.post_retrieve || {};
             const prefetchInput = document.getElementById('knowledge-post-retrieve-prefetch-top-k');
             if (prefetchInput) {
-                prefetchInput.value = post.prefetch_top_k ?? 0;
+                prefetchInput.value = post.prefetch_top_k ?? 20;
             }
             const maxCharsInput = document.getElementById('knowledge-post-retrieve-max-chars');
             if (maxCharsInput) {
@@ -1273,8 +1298,25 @@ async function applySettings() {
                     return isNaN(val) ? 0.7 : val;
                 })(),
                 sub_index_filter: document.getElementById('knowledge-retrieval-sub-index-filter')?.value?.trim() || '',
+                multi_query: {
+                    max_queries: (() => {
+                        const v = parseInt(document.getElementById('knowledge-multi-query-max-queries')?.value, 10);
+                        if (isNaN(v) || v <= 0) return 4;
+                        return Math.min(8, v);
+                    })()
+                },
+                rerank: {
+                    provider: document.getElementById('knowledge-rerank-provider')?.value?.trim() || '',
+                    model: document.getElementById('knowledge-rerank-model')?.value?.trim() || '',
+                    base_url: document.getElementById('knowledge-rerank-base-url')?.value?.trim() || '',
+                    api_key: document.getElementById('knowledge-rerank-api-key')?.value?.trim() || ''
+                },
                 post_retrieve: {
-                    prefetch_top_k: parseInt(document.getElementById('knowledge-post-retrieve-prefetch-top-k')?.value, 10) || 0,
+                    prefetch_top_k: (() => {
+                        const raw = document.getElementById('knowledge-post-retrieve-prefetch-top-k')?.value;
+                        const v = parseInt(raw, 10);
+                        return isNaN(v) ? 20 : Math.max(0, v);
+                    })(),
                     max_context_chars: parseInt(document.getElementById('knowledge-post-retrieve-max-chars')?.value, 10) || 0,
                     max_context_tokens: parseInt(document.getElementById('knowledge-post-retrieve-max-tokens')?.value, 10) || 0
                 }

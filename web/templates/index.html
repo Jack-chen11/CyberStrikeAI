@@ -3010,13 +3010,45 @@
                                         </div>
 
                                         <div class="settings-subsection-header">
+                                            <h5 data-i18n="settingsBasic.ragPipelineHeader">RAG 管线（MultiQuery + Rerank）</h5>
+                                        </div>
+                                        <p class="form-hint" style="margin: 0 0 12px 0;" data-i18n="settingsBasic.ragPipelineHint">MultiQuery 与精排始终启用：LLM 改写多路检索 → 向量预取与融合 → HTTP 精排 → 去重与预算截断。</p>
+                                        <div class="form-group">
+                                            <label for="knowledge-multi-query-max-queries" data-i18n="settingsBasic.multiQueryMaxQueries">MultiQuery 改写变体上限</label>
+                                            <input type="number" id="knowledge-multi-query-max-queries" min="1" max="8" data-i18n="settingsBasic.multiQueryMaxQueriesPlaceholder" data-i18n-attr="placeholder" placeholder="4" />
+                                            <small class="form-hint" data-i18n="settingsBasic.multiQueryMaxQueriesHint">LLM 生成的检索变体数量上限（含原问语义覆盖）；建议 3~4，最大 8。</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-rerank-provider" data-i18n="settingsBasic.rerankProvider">精排提供商</label>
+                                            <select id="knowledge-rerank-provider">
+                                                <option value="" data-i18n="settingsBasic.rerankProviderAuto">自动（按 Base URL 推断）</option>
+                                                <option value="dashscope">DashScope</option>
+                                                <option value="cohere" data-i18n="settingsBasic.rerankProviderCohere">Cohere 兼容 API</option>
+                                            </select>
+                                            <small class="form-hint" data-i18n="settingsBasic.rerankProviderHint">DashScope 使用 gte-rerank；其他兼容端点走 /v1/rerank。留空时按下方 Base URL 自动推断。</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-rerank-model" data-i18n="settingsBasic.rerankModel">精排模型（可选）</label>
+                                            <input type="text" id="knowledge-rerank-model" data-i18n="settingsBasic.rerankModelPlaceholder" data-i18n-attr="placeholder" placeholder="留空：DashScope→gte-rerank，Cohere→rerank-multilingual-v3.0" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-rerank-base-url" data-i18n="settingsBasic.rerankBaseUrl">精排 Base URL（可选）</label>
+                                            <input type="text" id="knowledge-rerank-base-url" data-i18n="settingsBasic.rerankBaseUrlPlaceholder" data-i18n-attr="placeholder" placeholder="留空则复用嵌入 / OpenAI 的 base_url" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="knowledge-rerank-api-key" data-i18n="settingsBasic.rerankApiKey">精排 API Key（可选）</label>
+                                            <input type="password" id="knowledge-rerank-api-key" data-i18n="settingsBasic.rerankApiKeyPlaceholder" data-i18n-attr="placeholder" placeholder="留空则复用嵌入 / OpenAI 的 api_key" />
+                                            <small class="form-hint" data-i18n="settingsBasic.rerankApiKeyHint">精排失败时自动降级为融合排序，检索仍可用。</small>
+                                        </div>
+
+                                        <div class="settings-subsection-header">
                                             <h5 data-i18n="settingsBasic.postRetrieveHeader">检索后处理（去重 / 预算）</h5>
                                         </div>
                                         <p class="form-hint" style="margin: 0 0 12px 0;" data-i18n="settingsBasic.postRetrieveDedupeAuto">检索结果会自动按正文规范化去重（合并仅空白不同的重复片段），无需配置。</p>
                                         <div class="form-group">
                                             <label for="knowledge-post-retrieve-prefetch-top-k" data-i18n="settingsBasic.prefetchTopK">预取候选数（向量阶段）</label>
-                                            <input type="number" id="knowledge-post-retrieve-prefetch-top-k" min="0" max="200" data-i18n="settingsBasic.prefetchTopKPlaceholder" data-i18n-attr="placeholder" placeholder="0" />
-                                            <small class="form-hint" data-i18n="settingsBasic.prefetchTopKHint">0 表示与 Top-K 相同；大于 Top-K 时先多取候选再经去重/截断回到 Top-K（上限 200）。</small>
+                                            <input type="number" id="knowledge-post-retrieve-prefetch-top-k" min="0" max="200" data-i18n="settingsBasic.prefetchTopKPlaceholder" data-i18n-attr="placeholder" placeholder="20" />
+                                            <small class="form-hint" data-i18n="settingsBasic.prefetchTopKHint">每条 MultiQuery 变体的向量候选数；0 表示内置 max(top_k×4, 20)（上限 200）。</small>
                                         </div>
                                         <div class="form-group">
                                             <label for="knowledge-post-retrieve-max-chars" data-i18n="settingsBasic.maxContextChars">返回内容最大字符数（Unicode）</label>
