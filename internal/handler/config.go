@@ -1432,12 +1432,7 @@ func (h *ConfigHandler) ApplyConfig(c *gin.Context) {
 
 	// 更新检索器配置（如果知识库启用）
 	if h.config.Knowledge.Enabled && h.retrieverUpdater != nil {
-		retrievalConfig := &knowledge.RetrievalConfig{
-			TopK:                h.config.Knowledge.Retrieval.TopK,
-			SimilarityThreshold: h.config.Knowledge.Retrieval.SimilarityThreshold,
-			SubIndexFilter:      h.config.Knowledge.Retrieval.SubIndexFilter,
-			PostRetrieve:        h.config.Knowledge.Retrieval.PostRetrieve,
-		}
+		retrievalConfig := knowledge.RetrievalConfigFromYAML(h.config.Knowledge.Retrieval)
 		h.retrieverUpdater.UpdateConfig(retrievalConfig)
 		h.logger.Info("检索器配置已更新",
 			zap.Int("top_k", retrievalConfig.TopK),
@@ -1720,6 +1715,13 @@ func updateKnowledgeConfig(doc *yaml.Node, cfg config.KnowledgeConfig) {
 	setIntInMap(retrievalNode, "top_k", cfg.Retrieval.TopK)
 	setFloatInMap(retrievalNode, "similarity_threshold", cfg.Retrieval.SimilarityThreshold)
 	setStringInMap(retrievalNode, "sub_index_filter", cfg.Retrieval.SubIndexFilter)
+	mqNode := ensureMap(retrievalNode, "multi_query")
+	setIntInMap(mqNode, "max_queries", cfg.Retrieval.MultiQuery.MaxQueries)
+	rerankNode := ensureMap(retrievalNode, "rerank")
+	setStringInMap(rerankNode, "provider", cfg.Retrieval.Rerank.Provider)
+	setStringInMap(rerankNode, "model", cfg.Retrieval.Rerank.Model)
+	setStringInMap(rerankNode, "base_url", cfg.Retrieval.Rerank.BaseURL)
+	setStringInMap(rerankNode, "api_key", cfg.Retrieval.Rerank.APIKey)
 	postNode := ensureMap(retrievalNode, "post_retrieve")
 	setIntInMap(postNode, "prefetch_top_k", cfg.Retrieval.PostRetrieve.PrefetchTopK)
 	setIntInMap(postNode, "max_context_chars", cfg.Retrieval.PostRetrieve.MaxContextChars)
