@@ -35,7 +35,18 @@ CyberStrikeAI is an **AI-native security testing platform** built in Go. It inte
 
 ### System Dashboard Overview
 
-<img src="./images/dashboard.png" alt="System Dashboard" width="100%">
+<table>
+<tr>
+<td width="50%" align="center">
+<strong>Light Mode</strong><br/>
+<img src="./images/dashboard.png" alt="System Dashboard (Light)" width="100%">
+</td>
+<td width="50%" align="center">
+<strong>Dark Mode</strong><br/>
+<img src="./images/dark.png" alt="System Dashboard (Dark)" width="100%">
+</td>
+</tr>
+</table>
 
 *The dashboard provides a comprehensive overview of system runtime status, security vulnerabilities, tool usage, and knowledge base, helping users quickly understand the platform's core features and current state.*
 
